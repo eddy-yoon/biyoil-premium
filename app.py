@@ -14,7 +14,7 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 try:
     from moviepy import ImageClip, VideoFileClip, concatenate_videoclips, AudioFileClip, vfx, afx, CompositeVideoClip
 except ImportError:
-    st.error("엔진 설치 중... 1분만 기다린 후 새로고침 해주세요.")
+    st.error("엔진 설치 중... 잠시 대기 후 새로고침 해주세요.")
     st.stop()
 
 st.set_page_config(page_title="비요일 얼티밋 스튜디오", page_icon="🎬", layout="wide")
@@ -22,7 +22,7 @@ st.set_page_config(page_title="비요일 얼티밋 스튜디오", page_icon="�
 TARGET_W, TARGET_H = 1080, 1920
 
 def create_subtitle_img(text, style, font_path, font_size=70, y_pos=1500):
-    """y_pos가 클수록 위로 올라갑니다 (0: 바닥, 1800: 천장)"""
+    """y_pos: 0(하단) ~ 1800(상단)"""
     img = PIL.Image.new('RGBA', (TARGET_W, TARGET_H), (0, 0, 0, 0))
     draw = PIL.ImageDraw.Draw(img)
     try:
@@ -32,8 +32,7 @@ def create_subtitle_img(text, style, font_path, font_size=70, y_pos=1500):
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     tx = (TARGET_W - tw) // 2
-    # 계산 방식: 전체 높이에서 y_pos만큼 띄움 (y_pos가 1700이면 위에서 220픽셀 지점)
-    ty = TARGET_H - th - y_pos 
+    ty = TARGET_H - th - y_pos # 입력된 y_pos만큼 아래에서 띄움
     
     if style == "Classic Bar (검정바)":
         draw.rectangle([tx-30, ty-20, tx+tw+30, ty+th+20], fill=(0, 0, 0, 160))
@@ -48,22 +47,22 @@ def create_subtitle_img(text, style, font_path, font_size=70, y_pos=1500):
     return img
 
 def apply_blur_bg(pil_img):
-    bg = pil_img.resize((TARGET_W//2, TARGET_H//2), PIL.Image.Resampling.LANCZOS)
-    bg = bg.filter(PIL.ImageFilter.GaussianBlur(radius=20))
+    """메모리 절약을 위해 배경 블러 연산을 최적화함"""
+    # 1. 아주 작게 줄여서 블러 처리 (메모리 급감)
+    bg = pil_img.resize((TARGET_W//4, TARGET_H//4), PIL.Image.Resampling.NEAREST)
+    bg = bg.filter(PIL.ImageFilter.GaussianBlur(radius=5))
     bg = bg.resize((TARGET_W, TARGET_H), PIL.Image.Resampling.LANCZOS)
+    # 2. 전경 이미지는 비율 유지
     fg = PIL.ImageOps.contain(pil_img, (TARGET_W, TARGET_H))
     bg.paste(fg, ((TARGET_W-fg.size[0])//2, (TARGET_H-fg.size[1])//2))
     return bg
 
 # --- 사이드바 ---
 st.sidebar.header("🎬 전역 편집 설정")
-target_total = st.sidebar.number_input("⏱️ 목표 전체 길이(초)", 5, 120, 20)
+target_total = st.sidebar.number_input("⏱️ 목표 전체 길이(초)", 5, 60, 20)
 logo_dur = st.sidebar.slider("🖼️ 로고 노출 시간(초)", 2.0, 5.0, 3.5)
 sub_style = st.sidebar.selectbox("🎨 자막 디자인", ["Classic Bar (검정바)", "Modern Shadow (그림자)", "Elegant Border (테두리)"])
-
-# [수정포인트] 자막 높이 범위를 100(바닥) ~ 1800(꼭대기)로 확장
-sub_y = st.sidebar.slider("📏 자막 상하 위치 (숫자가 클수록 위로)", 100, 1800, 1500)
-st.sidebar.info("💡 1500 이상으로 설정하면 상단에 자막이 위치합니다.")
+sub_y = st.sidebar.slider("📏 자막 위치 (0:하단, 1800:상단)", 0, 1800, 1500)
 
 # --- 메인 화면 ---
 st.title("☔ 비요일 숏폼 스튜디오 [ULTIMATE v3]")
@@ -80,13 +79,12 @@ if uploaded_files:
         for i, f in enumerate(uploaded_files):
             with cols[i % 2]:
                 st.write(f"**장면 {i+1}: {f.name}**")
-                st.session_state.subs[f.name] = st.text_input(f"자막 입력", key=f"s_{f.name}", value=st.session_state.subs.get(f.name, ""))
+                st.session_state.subs[f.name] = st.text_input(f"자막", key=f"s_{f.name}", value=st.session_state.subs.get(f.name, ""))
                 if not f.name.lower().endswith(('.mp4', '.mov')):
                     if st.checkbox("시간 개별 지정", key=f"c_{f.name}"):
                         st.session_state.durs[f.name] = st.slider("재생 시간", 0.5, 10.0, st.session_state.durs.get(f.name, 4.0), key=f"d_{f.name}")
 
     with tab_preview:
-        st.info("💡 왼쪽 사이드바의 '자막 상하 위치' 슬라이더를 조절하며 확인하세요.")
         p_cols = st.columns(3)
         for i, f in enumerate(uploaded_files):
             with p_cols[i % 3]:
@@ -113,7 +111,7 @@ if uploaded_files:
     if st.button("🚀 최종 고화질 영상 제작 시작"):
         if not logo: st.error("로고를 올려주세요!")
         else:
-            with st.spinner('상단 자막 위치를 적용하여 영상을 제작 중입니다...'):
+            with st.spinner('메모리를 최적화하여 영상을 제작 중입니다...'):
                 try:
                     final_clips = []
                     overlap = 0.5
@@ -156,12 +154,12 @@ if uploaded_files:
                         if txt:
                             sub_p = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
                             create_subtitle_img(txt, sub_style, "font.otf", y_pos=sub_y).save(sub_p)
-                            c = CompositeVideoClip([c, ImageClip(sub_p).with_duration(c.duration).with_fps(24)])
+                            sub_clip = ImageClip(sub_p).with_duration(c.duration).with_fps(24)
+                            c = CompositeVideoClip([c, sub_clip])
                         
                         eff = [vfx.CrossFadeOut(overlap)] if len(final_clips)==0 else [vfx.CrossFadeIn(overlap), vfx.CrossFadeOut(overlap)]
                         final_clips.append(c.with_fps(24).with_effects(eff))
 
-                    # 로고 추가
                     l_img = apply_blur_bg(PIL.Image.open(io.BytesIO(logo.read())).convert("RGB"))
                     lp = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
                     l_img.save(lp)
@@ -174,12 +172,13 @@ if uploaded_files:
                             audio = AudioFileClip(mt.name).with_duration(res_v.duration).with_effects([afx.AudioFadeIn(1.0), afx.AudioFadeOut(2.0)])
                             res_v = res_v.with_audio(audio)
                     
-                    res_v.write_videofile("final.mp4", fps=24, codec="libx264", audio_codec="aac", bitrate="3000k", threads=1)
+                    # 렌더링 시 메모리 사용량 제한을 위해 threads=1, 가벼운 설정 사용
+                    res_v.write_videofile("final.mp4", fps=24, codec="libx264", audio_codec="aac", bitrate="2000k", threads=1)
                     st.video("final.mp4")
-                    st.success("🎉 상단 자막 버전 제작 완료!")
+                    st.success("🎉 성공!")
                     
                     res_v.close()
-                    for c in final_clips: c.close()
+                    for clip in final_clips: clip.close()
                     gc.collect()
 
                 except Exception as e: st.error(f"오류: {e}")
